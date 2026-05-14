@@ -1,101 +1,96 @@
-> [!IMPORTANT]
-> 本仓库是基于原项目 [ZcChat2](https://github.com/Zao-chen/ZcChat2) 的二次开发学习版本，不是原作者官方版本。项目继续保留 GPL-3.0 license、原作者来源和原 README 内容。本次修改由 AI 辅助开发，新增测试角色立绘素材由 ChatGPT Image 2 生成，详见 [AI_DISCLOSURE.md](AI_DISCLOSURE.md)。
+# XChat1
 
-> [!NOTE]
-> 📱 ZcChat2的 [移动端版本](https://github.com/Zao-chen/ZcChat2ForMobile) 已同步上线！
-> 👉 为竖屏设备设计的版本，和 Galgame 角色在手机上对话！
+XChat1 是一个基于 Qt6 Widgets 的桌面 AI 角色陪伴项目。它以 Galgame 式“立绘 + 对话框”为主要交互形式，目标是做一个轻量、可自定义、适合陪伴聊天和辅助学习代码的桌面角色。
 
-# ZcChat2
+本项目基于 [ZcChat2](https://github.com/Zao-chen/ZcChat2) 进行二次开发，原项目作者为 Zao-chen，原项目采用 GPL-3.0 license。本仓库不是原作者官方版本。
 
-🌟一个模仿 Galgame 演出效果的AI桌宠，[ZcChat](https://github.com/Zao-chen/ZcChat)的重制版。🌟
+## 项目方向
 
-<img width="1045" height="593" alt="SnowShot_2026-03-21_18-54-38" src="https://github.com/user-attachments/assets/49439b92-308f-4ecd-b8cc-a1538153752c" />
+XChat1 更关注一个简单直接的桌面陪伴体验：
 
-[![Docs](https://img.shields.io/badge/文档-docs-0ea5e9?style=for-the-badge)](https://github.com/Zao-chen/ZcChat2/wiki)
-[![GitHub Release](https://img.shields.io/github/v/release/Zao-chen/ZcChat2?color=22c55e&style=for-the-badge)](https://github.com/Zao-chen/ZcChat2/releases)
-[![GitHub Downloads](https://img.shields.io/github/downloads/Zao-chen/ZcChat2/total?color=6366f1&style=for-the-badge)](https://github.com/Zao-chen/ZcChat2/releases)
-[![GitHub Stars](https://img.shields.io/github/stars/Zao-chen/ZcChat2?color=f59e0b&style=for-the-badge)](https://github.com/Zao-chen/ZcChat2/stargazers)
-[![GitHub License](https://img.shields.io/github/license/Zao-chen/ZcChat2?color=ef4444&style=for-the-badge)](LICENSE)
+- 桌面上显示角色立绘
+- 通过对话框和角色聊天
+- 支持配置大模型 API
+- 支持角色立绘、基础语音合成和动画插件
+- 优化聊天框显示、输入体验和文本样式
 
-## 🎯 项目介绍
+相比做成复杂工具平台，本项目目前更偏向“Galgame 风格桌面 AI 角色”。
 
-### ✨ 核心特性
+## 本版本主要修改
 
-* 😊 **立绘表情与动作：** 采用 Galgame 立绘的演出方式，支持多表情、多动作组合
-* 🎬 **立绘演出：** 支持立绘动画（如颤抖、靠近等）和粒子（如生气气泡等）
-* 🎙 **语音交互：** 语音输入、唤醒、直接对话和打断
-* 🔊 **语音合成：** 支持各种语音引擎，还原角色的声音
-* 💻**操作电脑：** 通过系统级API给予桌宠操作电脑的能力，与她深度互动
-* 🧠 **长期记忆系统：**
-  支持记忆存储与压缩，实现长期记忆能力以及性格成长
+本仓库在 ZcChat2 基础上做了以下二次开发：
 
-本项目正在早期开发阶段，会逐步将ZcChat的功能升级并重写，同时采用了规范的项目管理，欢迎参与开发。
+- 启动时默认只显示立绘，不自动弹出聊天框
+- 修正设置窗口作为聊天框子窗口时可能出现的越界、置顶和关闭问题
+- 修正 API 配置刷新逻辑，根据当前服务商重新读取 API Key 和模型配置
+- 将聊天框中的用户输入和角色回复显示拆分，避免 Enter 误发送角色回复
+- 支持回复态直接打字切回输入框
+- 支持 Esc 隐藏聊天框
+- 修正历史回滚时文本不可见或显示错位的问题
+- 新增文本设置页，支持字体、字号和文本框主题
+- 增加浅色/深色透明文本框和 Galgame 风格文本框
+- 调整立绘缩放和动画显示逻辑，减少抖动和边缘异常
+- 新增一个测试用 Q 版角色立绘
 
-### 🎗️相比于ZcChat的新特性：
+详细修改记录见：
 
-- 更轻量级——后台内存占用40MB->8MB
-- 更流程体验——大模型和语言合成采用流式方式，响应速度更快
-- 更简单的配置——一键导入角色，各种配置更加简单
-- 更多自定义——将动画、粒子素材以插件的方式加载，支持二次开发和自定义
-- 更融入系统——专注于桌面版本，更多系统级操作
-- 更多感官——支持多模态内容，让桌宠可以看到更多内容
-- 更规范的格式——采用统一的资产、插件格式，为未来的手机端准备
+- [DEV_LOG_2026-05-15.md](DEV_LOG_2026-05-15.md)
+- [HANDOFF_2026-05-15_DIALOG_SPLIT.md](HANDOFF_2026-05-15_DIALOG_SPLIT.md)
 
-## 🗺 开发进度
+## AI 辅助开发与素材说明
 
-- [X] 基础功能的移植
-- [X] 完成立绘系统移植
-- [X] 接入语音合成
-- [X] 上下文和历史功能
-- [X] 一键导入角色
-- [X] 实现模型流式传输
-- [X] 语音切分流式生成
-- [X] 立绘动画和插件实现
-- [ ] 立绘例子和插件实现
-- [ ] 构建系统级操作模块
-- [ ] 多模态的实现
-- [ ] 重构语音交互模块
-- [ ] 实现长期记忆压缩机制
+本项目二次开发过程由 AI 辅助完成，包括代码阅读、问题定位、修改建议、日志整理和部分代码实现。
 
-## 🚀 快速入门
+新增测试角色立绘素材由 ChatGPT Image 2 生成，并作为测试素材放入默认角色目录。
 
-### Step1: 安装ZcChat2
+详细说明见：
 
-1. 在[Release](https://github.com/Zao-chen/ZcChat2/releases)下载ZcChat2并进行安装。
-2. 运行ZcChat2
+- [AI_DISCLOSURE.md](AI_DISCLOSURE.md)
 
-### Step2: 导入角色
+## 构建环境
 
-1. 在[角色分享](https://github.com/Zao-chen/ZcChat2/discussions/categories/%E8%A7%92%E8%89%B2%E5%88%86%E4%BA%AB)选择你喜欢的角色并下载角色
-2. 点击托盘的ZcChat2打开设置页面
-3. 在 `角色设置 > 选中角色`中点击 `导入`，选取刚刚下载的角色
+当前本地验证环境：
 
-### Step3: 配置对话模型
+- Windows
+- Qt 6.8.3 msvc2022_64
+- Visual Studio 2022 Community
+- CMake
+- Release 构建
 
-1. 在 `对话模型`中选择你的LLM服务商并填入ApiKey
-2. 点击 `获取`来测试可用性并查看模型列表
-3. 在 `角色设置 > 运行配置 > 对话模型`中选择模型
+参考构建命令：
 
-### Step4: （可选）安装配置语音合成
+```powershell
+cd E:\File\AIuseing\xai\ZcChat2
+& cmd.exe /c 'call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat" && "C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" --build .\build-release --config Release'
+```
 
-1. 在 `语言合成`中选择你使用的语言合成工具并填入API地址
-2. 点击 `获取`来测试可用性并查看语言合成模型和角色
-3. 打开 `角色设置 > 运行配置 > 语言合成`并选择模型
+说明：由于项目自带第三方 DLL 主要为 Release 版本，本地开发建议优先使用 Release 构建。
 
-## 🤗 如何贡献
+## 运行配置
 
-ZcChat2是一个开源项目。参与ZcChat2项目的方法有很多！
+程序运行时会读取用户文档目录下的配置：
 
-* **为项目做出贡献**：有兴趣做出贡献吗？欢迎[Pull Request](https://github.com/Zao-chen/ZcChat2/pulls)！详情参考[开发指南](https://github.com/Zao-chen/ZcChat2/blob/main/CONTRIBUTING.md#-参与开发)。
-* **报告BUG、建议**：有BUG或有功能请求？请通过[Issues](https://github.com/Zao-chen/ZcCha2t/issues)提交它们。详情参考[Issue指南](https://github.com/Zao-chen/ZcChat2/blob/main/CONTRIBUTING.md#-提交-Issue)
-* **或者……**：给项目来一个star⭐怎么样？
+```text
+Documents/ZcChat2
+```
 
-## 🔗 相关链接
+默认配置资源位于：
 
-- [Zao-chen/ZcChat2ForMobile: 一个模仿 Galgame 演出效果的AI桌宠ZcChat2的移动端版本](https://github.com/Zao-chen/ZcChat2ForMobile)
-- [Zao-chen/ZcChat: 一个模仿Galgame效果的AI桌宠 | An AI desktop pet that mimics the effects of a Galgame](https://github.com/Zao-chen/ZcChat)
-- [Liniyous/ElaWidgetTools: Fluent-UI For QT-Widget](https://github.com/Liniyous/ElaWidgetTools)
-- [Zao-chen/ZcAILib: High-performance AI Request Library for Qt](https://github.com/Zao-chen/ZcAILib)
-- [Zao-chen/ZcWidgetTools: Extension for ElaWidgetTools adding missing Qt widgets](https://github.com/Zao-chen/ZcWidgetTools)
-- [Zao-chen/ZcJsonLib: Lightweight JSON key/value library for Qt, QSettings-style.](https://github.com/Zao-chen/ZcJsonLib)
-- [Qt | Tools for Each Stage of Software Development Lifecycle](https://www.qt.io/)
+```text
+res/default_config/ZcChat2
+```
+
+请不要把个人运行时配置中的 API Key 提交到仓库。
+
+## 许可
+
+本项目基于 GPL-3.0 开源项目 ZcChat2 二次开发，因此继续遵守 GPL-3.0 license。
+
+保留内容：
+
+- 原项目 LICENSE
+- 原项目来源说明
+- 第三方库和原项目资源的既有许可关系
+
+本仓库不声明为 ZcChat2 官方版本。
+
