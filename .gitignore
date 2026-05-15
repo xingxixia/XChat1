@@ -80,6 +80,7 @@ CMakeLists.txt.user*
 /build*/
 /out/
 /docx_render_check/
+/runtime_data/
 
 #clangd cache/index
 .cache/

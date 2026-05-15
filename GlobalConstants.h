@@ -1,71 +1,122 @@
 #pragma once
+
+#include <QCoreApplication>
+#include <QByteArray>
 #include <QDir>
+#include <QFile>
+#include <QFileInfo>
 #include <QSettings>
-#include <QStandardPaths>
 #include <QString>
 
-//主要是一些可迁移的配置，如APIKey
+inline QString ProjectRootPath()
+{
+    QDir dir(QCoreApplication::applicationDirPath());
+    for (int i = 0; i < 8; ++i)
+    {
+        if (QDir(dir.filePath("res/default_config/ZcChat2")).exists())
+            return dir.absolutePath();
+        if (!dir.cdUp())
+            break;
+    }
+
+    return QCoreApplication::applicationDirPath();
+}
+
+inline QString RuntimeDataRootPath()
+{
+    return QDir(ProjectRootPath()).filePath("runtime_data/ZcChat2");
+}
+
+inline QString DefaultRuntimeDataRootPath()
+{
+    return QDir(ProjectRootPath()).filePath("res/default_config/ZcChat2");
+}
+
+inline void CopyMissingFilesRecursively(const QString &sourceRoot,
+                                        const QString &targetRoot)
+{
+    QDir sourceDir(sourceRoot);
+    if (!sourceDir.exists())
+        return;
+
+    QDir().mkpath(targetRoot);
+    const QFileInfoList entries = sourceDir.entryInfoList(
+        QDir::NoDotAndDotDot | QDir::Files | QDir::Dirs);
+    for (const QFileInfo &entry : entries)
+    {
+        const QString targetPath = QDir(targetRoot).filePath(entry.fileName());
+        if (entry.isDir())
+        {
+            CopyMissingFilesRecursively(entry.absoluteFilePath(), targetPath);
+            continue;
+        }
+        if (!QFileInfo::exists(targetPath))
+            QFile::copy(entry.absoluteFilePath(), targetPath);
+    }
+}
+
+inline void InitializeRuntimeData()
+{
+    CopyMissingFilesRecursively(DefaultRuntimeDataRootPath(),
+                                RuntimeDataRootPath());
+}
+
+inline QString UnselectedCharacterName()
+{
+    return QString::fromUtf8(QByteArray::fromHex("e69caae98089e68ba9"));
+}
+
+// Main portable configuration, such as API keys.
 inline const QString JsonSettingPath =
-    QDir(QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation))
-        .filePath("ZcChat2/config.json");
+    QDir(RuntimeDataRootPath()).filePath("config.json");
 
-//一些随机子走的无需迁移的配置，如立绘位置和大小
+// Machine-local configuration, such as selected character and position.
 inline const QString IniSettingPath =
-    QDir(QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation))
-        .filePath("ZcChat2/config.ini");
+    QDir(RuntimeDataRootPath()).filePath("config.ini");
 
-//角色资源位置
+// Character asset directory.
 inline const QString CharacterAssestPath =
-    QDir(QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation))
-        .filePath("ZcChat2/Character/Assets");
+    QDir(RuntimeDataRootPath()).filePath("Character/Assets");
 
-//角色配置位置
+// Character user configuration directory.
 inline const QString CharacterUserConfigPath =
-    QDir(QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation))
-        .filePath("ZcChat2/Character/UserConfig");
+    QDir(RuntimeDataRootPath()).filePath("Character/UserConfig");
 
-//动画插件位置
+// Animation plugin directory.
 inline const QString AnimePluginPath =
-    QDir(QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation))
-        .filePath("ZcChat2/Plugin/Anime");
+    QDir(RuntimeDataRootPath()).filePath("Plugin/Anime");
 
-//读取当前选中的角色
 inline QString ReadNowSelectChar()
 {
-    QSettings *settings = new QSettings(IniSettingPath, QSettings::IniFormat);
-    QString charName =
-        settings->value("character/CharSelect", "未选择").toString();
-    return charName;
+    QSettings settings(IniSettingPath, QSettings::IniFormat);
+    return settings.value("character/CharSelect", UnselectedCharacterName()).toString();
 }
 
-//读取当前选中角色的立绘路径
 inline QString ReadCharacterTachiePath()
 {
-    if (ReadNowSelectChar() == "未选择")
+    const QString charName = ReadNowSelectChar();
+    if (charName == UnselectedCharacterName())
         return QString();
-    QString tachiePath =
-        QDir(CharacterAssestPath).filePath(ReadNowSelectChar() + "/Tachie");
-    if (QDir(tachiePath).exists())
-        return tachiePath;
-    else
-        return QString();
+
+    const QString tachiePath =
+        QDir(CharacterAssestPath).filePath(charName + "/Tachie");
+    return QDir(tachiePath).exists() ? tachiePath : QString();
 }
 
-//读取当前选中角色的配置路径
 inline QString ReadCharacterUserConfigPath()
 {
-    if (ReadNowSelectChar() == "未选择")
+    const QString charName = ReadNowSelectChar();
+    if (charName == UnselectedCharacterName())
         return QString();
-    QString tachiePath = QDir(CharacterUserConfigPath)
-                             .filePath(ReadNowSelectChar() + "/config.json");
-    return tachiePath;
+
+    return QDir(CharacterUserConfigPath).filePath(charName + "/config.json");
 }
 
-//读取当前选中角色的对话上下文路径
 inline QString ReadCharacterContextPath()
 {
-    if (ReadNowSelectChar() == "未选择")
+    const QString charName = ReadNowSelectChar();
+    if (charName == UnselectedCharacterName())
         return QString();
-    return QDir(CharacterUserConfigPath)
-        .filePath(ReadNowSelectChar() + "/context.json");
+
+    return QDir(CharacterUserConfigPath).filePath(charName + "/context.json");
 }

@@ -3,6 +3,8 @@
 #include "windows/setting/setting.h"
 #include "windows/tachie/tachie.h"
 
+#include "GlobalConstants.h"
+
 // ElaWidgetTools 第三方 UI 库：提供应用初始化和更美观的菜单控件。
 #include "ElaApplication.h"
 #include "ElaMenu.h"
@@ -28,6 +30,7 @@ int main(int argc, char *argv[])
     QCoreApplication::setApplicationName("ZcChat2");
     QCoreApplication::setApplicationVersion(APP_VERSION);
     QCoreApplication::setOrganizationName("MyOrganization");
+    InitializeRuntimeData();
     qInfo() << "Debugging Output";
 
     /*窗口创建*/

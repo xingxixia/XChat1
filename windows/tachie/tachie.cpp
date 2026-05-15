@@ -173,6 +173,17 @@ void Tachie::SetTachieImg(QString TachieName)
                 break;
             }
         }
+
+        if (!loaded && NowTachie.isNull() && !files.isEmpty())
+        {
+            const QString fallbackFile = files.first();
+            if (loadedPixmap.load(tachieDir.filePath(fallbackFile)))
+            {
+                loaded = true;
+                qWarning() << "立绘加载失败，已使用目录中的首张图片作为兜底:"
+                           << normalizedName << "->" << fallbackFile;
+            }
+        }
     }
 
     if (loaded)
