@@ -6,107 +6,63 @@
 #include "ZcJsonLib.h"
 
 #include "ElaComboBox.h"
-#include "ElaContentDialog.h"
 #include "ElaMessageBar.h"
+#include "ElaPlainTextEdit.h"
+#include "ElaPushButton.h"
 #include "ElaScrollPageArea.h"
 #include "ElaText.h"
 
 #include <QComboBox>
 #include <QDebug>
 #include <QDir>
-#include <QFile>
-#include <QFileDialog>
 #include <QFileInfo>
 #include <QHBoxLayout>
 #include <QJsonArray>
 #include <QJsonObject>
-#include <QLabel>
-#include <QProcess>
+#include <QPlainTextEdit>
+#include <QScrollArea>
 #include <QSettings>
-#include <QStandardPaths>
 #include <QVBoxLayout>
 
-namespace //用于跨平台解压zip，Linux/Mac使用python脚本，Windows使用powershell命令
+static QStringList ReadLlmModelList(const QString &serverSelect)
 {
-bool extractZipArchive(const QString &zipFilePath, const QString &targetDir,
-                       QString *errorMessage)
-{
-    QString pythonProgram = QStandardPaths::findExecutable("python3");
-    if (pythonProgram.isEmpty())
-        pythonProgram = QStandardPaths::findExecutable("python");
-
-    if (pythonProgram.isEmpty())
-    {
-        if (errorMessage)
-            *errorMessage = "未找到可用的 Python 解释器";
-        return false;
-    }
-
-    QProcess process;
-    process.setProgram(pythonProgram);
-    process.setArguments(QStringList()
-                         << "-c"
-                         << QStringLiteral(R"PY(
-        import os
-        import sys
-        import zipfile
-        import shutil
-
-        zip_path = sys.argv[1]
-        target_dir = sys.argv[2]
-
-        os.makedirs(target_dir, exist_ok=True)
-        target_abs = os.path.abspath(target_dir)
-
-        with zipfile.ZipFile(zip_path) as archive:
-            for member in archive.infolist():
-                # 兼容 Windows zip 中使用的反斜杠作为分隔符
-                member_name = member.filename.replace('\\', '/')
-                dest_path = os.path.abspath(os.path.join(target_dir, member_name))
-                if os.path.commonpath([target_abs, dest_path]) != target_abs:
-                    raise RuntimeError(f"非法压缩包条目: {member.filename}")
-                # 如果是目录，创建目录
-                if member_name.endswith('/'):
-                    os.makedirs(dest_path, exist_ok=True)
-                    continue
-                parent = os.path.dirname(dest_path)
-                if parent:
-                    os.makedirs(parent, exist_ok=True)
-                with archive.open(member) as source, open(dest_path, 'wb') as target:
-                    shutil.copyfileobj(source, target)
-        )PY")
-                         << zipFilePath << targetDir);
-
-    process.start();
-    if (!process.waitForFinished(60000))
-    {
-        process.kill();
-        if (errorMessage)
-            *errorMessage = "解压过程超时";
-        return false;
-    }
-
-    if (process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0)
-    {
-        if (errorMessage)
-        {
-            QString error = process.readAllStandardError().trimmed();
-            if (error.isEmpty())
-                error = process.readAllStandardOutput().trimmed();
-            *errorMessage = error.isEmpty() ? "解压失败" : error;
-        }
-        return false;
-    }
-
-    return true;
+    ZcJsonLib config(JsonSettingPath);
+    QStringList modelList;
+    const QJsonArray modelArray =
+        config.value("llm/" + serverSelect + "/ModelList").toArray();
+    for (const QJsonValue &model : modelArray)
+        modelList.append(model.toString());
+    return modelList;
 }
-} // namespace
+
+static QString DefaultPetPrompt()
+{
+    return QStringLiteral(
+        "你是一个桌面陪伴 AI，像 Galgame 角色一样陪伴用户。"
+        "你可以轻松、可爱、自然地聊天，也可以在用户需要时帮忙看代码、解释报错和整理思路。"
+        "回复时优先使用中文，语气要像在桌面旁边陪着用户，而不是生硬的工具。");
+}
+
+static QString PrimaryCharacterName()
+{
+    return QStringLiteral("test");
+}
+
+static int TextWidthWithPadding(const QWidget *widget, const QString &text,
+                                int minWidth, int padding)
+{
+    const int textWidth = widget->fontMetrics().horizontalAdvance(text);
+    return qMax(minWidth, textWidth + padding);
+}
 
 /*初始化窗口*/
 SettingChild_Char::SettingChild_Char(QWidget *parent)
     : QWidget(parent), ui(new Ui::SettingChild_Char)
 {
     ui->setupUi(this);
+    SetupPetPromptEditor();
+    SetupPageSwitcher();
+    SetupHistoryPage();
     //初始化动画管理器
     m_pluginManager.Reload();
 
@@ -118,9 +74,10 @@ SettingChild_Char::SettingChild_Char(QWidget *parent)
     //角色选择
     QSettings *settings =
         new QSettings(IniSettingPath, QSettings::IniFormat, this);
-    QString defaultChar =
-        settings->value("character/CharSelect", "未选择").toString();
+    settings->setValue("character/CharSelect", PrimaryCharacterName());
+    QString defaultChar = PrimaryCharacterName();
     ui->comboBox_CharList->setCurrentText(defaultChar);
+    ui->widget_SelectChar->hide();
     LoadCurrentCharConfig();
 
     isAlreadyLoading = true;
@@ -131,6 +88,340 @@ SettingChild_Char::~SettingChild_Char()
     delete ui;
 }
 
+void SettingChild_Char::SetupPetPromptEditor()
+{
+    auto *pageLayout = qobject_cast<QVBoxLayout *>(ui->page_Char->layout());
+    if (!pageLayout)
+        return;
+
+    auto *area = new ElaScrollPageArea(ui->page_Char);
+    auto *layout = new QHBoxLayout(area);
+    layout->setContentsMargins(15, 10, 15, 10);
+    layout->setStretch(0, 1);
+    layout->setStretch(1, 1);
+
+    auto *label = new ElaText(area);
+    label->setText(QStringLiteral("桌宠行为设定"));
+    QFont labelFont = label->font();
+    labelFont.setPointSize(12);
+    label->setFont(labelFont);
+
+    m_petPromptEdit = new ElaPlainTextEdit(area);
+    m_petPromptEdit->setMinimumHeight(90);
+    m_petPromptEdit->setPlaceholderText(
+        QStringLiteral("例如：你是一个温柔可爱的桌面陪伴 AI，会陪用户写代码、休息和聊天。"));
+    m_petPromptEdit->setStyleSheet(ui->plainTextEdit_CharPrompt->styleSheet());
+
+    layout->addWidget(label);
+    layout->addWidget(m_petPromptEdit);
+
+    const int insertIndex = pageLayout->indexOf(ui->widget_CharPrompt) + 1;
+    pageLayout->insertWidget(insertIndex, area);
+
+    connect(m_petPromptEdit, &QPlainTextEdit::textChanged, this, [this]() {
+        if (!isAlreadyLoading || !m_petPromptEdit)
+            return;
+
+        QString charName = ui->comboBox_CharList->currentText();
+        if (charName.isEmpty() || charName == QStringLiteral("未选择"))
+            return;
+
+        ZcJsonLib charConfig(
+            QDir(CharacterAssestPath).filePath(charName + "/config.json"));
+        charConfig.setValue("petPrompt", m_petPromptEdit->toPlainText());
+    });
+}
+
+void SettingChild_Char::SetupPageSwitcher()
+{
+    auto *rootLayout = qobject_cast<QVBoxLayout *>(layout());
+    if (!rootLayout)
+        return;
+
+    auto *area = new ElaScrollPageArea(this);
+    auto *layout = new QHBoxLayout(area);
+    layout->setContentsMargins(15, 4, 15, 4);
+
+    m_pageOneButton = new ElaPushButton(QStringLiteral("1"), area);
+    m_pageTwoButton = new ElaPushButton(QStringLiteral("2"), area);
+    m_pageOneButton->setMinimumWidth(TextWidthWithPadding(m_pageOneButton, QStringLiteral("1"), 46, 28));
+    m_pageTwoButton->setMinimumWidth(TextWidthWithPadding(m_pageTwoButton, QStringLiteral("2"), 46, 28));
+
+    layout->addStretch();
+    layout->addWidget(m_pageOneButton);
+    layout->addWidget(m_pageTwoButton);
+    layout->addStretch();
+
+    rootLayout->addWidget(area);
+
+    connect(m_pageOneButton, &QPushButton::clicked, this,
+            &SettingChild_Char::ShowPrimaryPage);
+    connect(m_pageTwoButton, &QPushButton::clicked, this,
+            &SettingChild_Char::ShowHistoryPage);
+}
+
+void SettingChild_Char::SetupHistoryPage()
+{
+    m_historyPage = new QWidget(ui->stackedWidget);
+    auto *pageLayout = new QVBoxLayout(m_historyPage);
+    pageLayout->setContentsMargins(15, 15, 15, 15);
+
+    auto *toolbar = new ElaScrollPageArea(m_historyPage);
+    auto *toolbarLayout = new QHBoxLayout(toolbar);
+    toolbarLayout->setContentsMargins(15, 8, 15, 8);
+
+    auto *refreshButton = new ElaPushButton(QStringLiteral("刷新"), toolbar);
+    auto *clearButton = new ElaPushButton(QStringLiteral("清空全部"), toolbar);
+    refreshButton->setMinimumWidth(TextWidthWithPadding(refreshButton, refreshButton->text(), 76, 34));
+    clearButton->setMinimumWidth(TextWidthWithPadding(clearButton, clearButton->text(), 104, 34));
+    toolbarLayout->addWidget(refreshButton);
+    toolbarLayout->addWidget(clearButton);
+    toolbarLayout->addStretch();
+    pageLayout->addWidget(toolbar);
+
+    auto *scrollArea = new QScrollArea(m_historyPage);
+    scrollArea->setWidgetResizable(true);
+    scrollArea->setFrameShape(QFrame::NoFrame);
+    scrollArea->setStyleSheet(QStringLiteral(
+        "QScrollArea { border: none; background: transparent; }"
+        "QScrollBar:vertical { border: none; background: transparent; width: 8px; }"
+        "QScrollBar::handle:vertical { background: rgba(136, 136, 136, 0.5); border-radius: 4px; }"));
+
+    auto *container = new QWidget(scrollArea);
+    m_historyListLayout = new QVBoxLayout(container);
+    m_historyListLayout->setContentsMargins(0, 0, 0, 0);
+    m_historyListLayout->addStretch();
+    scrollArea->setWidget(container);
+    pageLayout->addWidget(scrollArea);
+
+    ui->stackedWidget->addWidget(m_historyPage);
+
+    connect(refreshButton, &QPushButton::clicked, this,
+            &SettingChild_Char::RefreshHistoryPage);
+    connect(clearButton, &QPushButton::clicked, this, [this]() {
+        SaveHistoryLines(QStringList());
+        RefreshHistoryPage();
+    });
+}
+
+void SettingChild_Char::SetPrimaryPageVisible(bool visible)
+{
+    ui->widget_CharPrompt->setVisible(visible);
+    if (m_petPromptEdit)
+    {
+        if (QWidget *area = m_petPromptEdit->parentWidget())
+            area->setVisible(visible);
+    }
+    ui->label_4->setVisible(visible);
+    ui->widget_ApiKey_2->setVisible(visible);
+    ui->label->setVisible(visible);
+    ui->widget_Run_LLM->setVisible(visible);
+    ui->widget_Run_Vits->setVisible(visible);
+    ui->widget_Tachie_Set->setVisible(visible);
+}
+
+void SettingChild_Char::ShowPrimaryPage()
+{
+    SetPrimaryPageVisible(true);
+    ui->stackedWidget->setCurrentIndex(0);
+}
+
+void SettingChild_Char::ShowHistoryPage()
+{
+    SetPrimaryPageVisible(false);
+    RefreshHistoryPage();
+    if (m_historyPage)
+        ui->stackedWidget->setCurrentWidget(m_historyPage);
+}
+
+QStringList SettingChild_Char::ReadHistoryLines() const
+{
+    QStringList historyLines;
+    const QString contextPath = ReadCharacterContextPath();
+    if (contextPath.isEmpty())
+        return historyLines;
+
+    ZcJsonLib contextConfig(contextPath);
+    const QJsonArray historyArray =
+        contextConfig.value("history", QJsonValue(QJsonArray())).toArray();
+    for (const QJsonValue &value : historyArray)
+    {
+        const QString line = value.toString();
+        if (!line.isEmpty())
+            historyLines.append(line);
+    }
+    return historyLines;
+}
+
+void SettingChild_Char::SaveHistoryLines(const QStringList &historyLines)
+{
+    const QString contextPath = ReadCharacterContextPath();
+    if (contextPath.isEmpty())
+        return;
+
+    const QFileInfo fileInfo(contextPath);
+    QDir().mkpath(fileInfo.absolutePath());
+
+    QJsonArray historyArray;
+    for (const QString &line : historyLines)
+    {
+        const QString trimmedLine = line.trimmed();
+        if (!trimmedLine.isEmpty())
+            historyArray.append(trimmedLine);
+    }
+
+    ZcJsonLib contextConfig(contextPath);
+    contextConfig.setValue("history", QJsonValue(historyArray));
+    emit requestReloadContextHistory();
+}
+
+void SettingChild_Char::ClearHistoryRows()
+{
+    for (QWidget *row : m_historyRows)
+    {
+        if (row)
+            row->deleteLater();
+    }
+    m_historyRows.clear();
+}
+
+void SettingChild_Char::RefreshHistoryPage()
+{
+    if (!m_historyListLayout)
+        return;
+
+    ClearHistoryRows();
+    const QStringList historyLines = ReadHistoryLines();
+    const int insertIndex = qMax(0, m_historyListLayout->count() - 1);
+
+    if (historyLines.isEmpty())
+    {
+        auto *emptyLabel = new ElaText(QStringLiteral("暂无历史对话"), m_historyPage);
+        QFont font = emptyLabel->font();
+        font.setPointSize(12);
+        emptyLabel->setFont(font);
+        m_historyListLayout->insertWidget(insertIndex, emptyLabel);
+        m_historyRows.append(emptyLabel);
+        return;
+    }
+
+    for (int i = 0; i < historyLines.size(); ++i)
+    {
+        const QString historyLine = historyLines.at(i);
+        const bool isUserLine = historyLine.startsWith(QStringLiteral("用户："));
+        const bool isRoleLine = historyLine.startsWith(QStringLiteral("角色："));
+        const QString speakerText = isUserLine ? QStringLiteral("你")
+                                               : (isRoleLine ? QStringLiteral("她")
+                                                             : QStringLiteral("记录"));
+        const QString rowStyle = isUserLine
+                                     ? QStringLiteral("background: rgba(74, 144, 226, 26); border-radius: 8px;")
+                                     : (isRoleLine
+                                            ? QStringLiteral("background: rgba(236, 112, 153, 28); border-radius: 8px;")
+                                            : QStringLiteral("background: rgba(136, 136, 136, 20); border-radius: 8px;"));
+        const QString editStyle = ui->plainTextEdit_CharPrompt->styleSheet() +
+                                  (isUserLine
+                                       ? QStringLiteral("\nQPlainTextEdit { background: rgba(74, 144, 226, 34); }")
+                                       : (isRoleLine
+                                              ? QStringLiteral("\nQPlainTextEdit { background: rgba(236, 112, 153, 38); }")
+                                              : QStringLiteral("\nQPlainTextEdit { background: rgba(136, 136, 136, 24); }")));
+
+        auto *row = new ElaScrollPageArea(m_historyPage);
+        row->setStyleSheet(rowStyle);
+        auto *rowLayout = new QHBoxLayout(row);
+        rowLayout->setContentsMargins(12, 6, 12, 6);
+
+        auto *indexLabel = new ElaText(QString::number(i + 1), row);
+        indexLabel->setMinimumWidth(
+            TextWidthWithPadding(indexLabel, indexLabel->text(), 42, 20));
+
+        auto *speakerLabel = new ElaText(speakerText, row);
+        QFont speakerFont = speakerLabel->font();
+        speakerFont.setBold(true);
+        speakerLabel->setFont(speakerFont);
+        speakerLabel->setAlignment(Qt::AlignCenter);
+        speakerLabel->setMinimumWidth(
+            TextWidthWithPadding(speakerLabel, speakerText, 58, 28));
+        if (isUserLine)
+            speakerLabel->setStyleSheet(QStringLiteral("color: rgb(48, 105, 180);"));
+        else if (isRoleLine)
+            speakerLabel->setStyleSheet(QStringLiteral("color: rgb(190, 76, 118);"));
+
+        auto *edit = new ElaPlainTextEdit(row);
+        edit->setPlainText(historyLine);
+        edit->setMinimumHeight(58);
+        edit->setStyleSheet(editStyle);
+
+        auto *saveButton = new ElaPushButton(QStringLiteral("保存"), row);
+        auto *deleteButton = new ElaPushButton(QStringLiteral("删除"), row);
+        auto *deleteRoundButton = new ElaPushButton(QStringLiteral("删一轮"), row);
+        auto *rewindButton = new ElaPushButton(QStringLiteral("回滚"), row);
+        saveButton->setMinimumWidth(TextWidthWithPadding(saveButton, saveButton->text(), 74, 30));
+        deleteButton->setMinimumWidth(TextWidthWithPadding(deleteButton, deleteButton->text(), 74, 30));
+        deleteRoundButton->setMinimumWidth(
+            TextWidthWithPadding(deleteRoundButton, deleteRoundButton->text(), 92, 30));
+        rewindButton->setMinimumWidth(TextWidthWithPadding(rewindButton, rewindButton->text(), 74, 30));
+
+        rowLayout->addWidget(indexLabel);
+        rowLayout->addWidget(speakerLabel);
+        rowLayout->addWidget(edit, 1);
+        rowLayout->addWidget(saveButton);
+        rowLayout->addWidget(deleteButton);
+        rowLayout->addWidget(deleteRoundButton);
+        rowLayout->addWidget(rewindButton);
+
+        connect(saveButton, &QPushButton::clicked, this, [this, i, edit]() {
+            QStringList historyLines = ReadHistoryLines();
+            if (i < 0 || i >= historyLines.size())
+                return;
+            historyLines[i] = edit->toPlainText();
+            SaveHistoryLines(historyLines);
+            RefreshHistoryPage();
+        });
+
+        connect(deleteButton, &QPushButton::clicked, this, [this, i]() {
+            QStringList historyLines = ReadHistoryLines();
+            if (i < 0 || i >= historyLines.size())
+                return;
+            historyLines.removeAt(i);
+            SaveHistoryLines(historyLines);
+            RefreshHistoryPage();
+        });
+
+        connect(deleteRoundButton, &QPushButton::clicked, this, [this, i]() {
+            QStringList historyLines = ReadHistoryLines();
+            if (i < 0 || i >= historyLines.size())
+                return;
+
+            int start = i;
+            if (historyLines.at(i).startsWith(QStringLiteral("角色：")) &&
+                i > 0 && historyLines.at(i - 1).startsWith(QStringLiteral("用户：")))
+                start = i - 1;
+
+            int count = 1;
+            if (start + 1 < historyLines.size() &&
+                historyLines.at(start).startsWith(QStringLiteral("用户：")) &&
+                historyLines.at(start + 1).startsWith(QStringLiteral("角色：")))
+                count = 2;
+
+            for (int n = 0; n < count; ++n)
+                historyLines.removeAt(start);
+            SaveHistoryLines(historyLines);
+            RefreshHistoryPage();
+        });
+
+        connect(rewindButton, &QPushButton::clicked, this, [this, i]() {
+            QStringList historyLines = ReadHistoryLines();
+            if (i < 0 || i >= historyLines.size())
+                return;
+            SaveHistoryLines(historyLines.mid(0, i + 1));
+            RefreshHistoryPage();
+        });
+
+        m_historyListLayout->insertWidget(insertIndex + m_historyRows.size(), row);
+        m_historyRows.append(row);
+    }
+}
+
 /*加载角色配置*/
 void SettingChild_Char::LoadCurrentCharConfig()
 {
@@ -139,6 +430,8 @@ void SettingChild_Char::LoadCurrentCharConfig()
     {
         //如果没有选择角色，清空配置项显示
         ui->plainTextEdit_CharPrompt->clear();
+        if (m_petPromptEdit)
+            m_petPromptEdit->clear();
         ui->spinBox_TachieSize->setValue(0);
         ClearTachieBindingRows();
         ui->comboBox_ModelSelect->clear();
@@ -153,6 +446,16 @@ void SettingChild_Char::LoadCurrentCharConfig()
     ZcJsonLib charConfig(CharacterAssestPath + "/" + charName + "/config.json");
     QString charPrompt = charConfig.value("prompt").toString();
     ui->plainTextEdit_CharPrompt->setPlainText(charPrompt);
+    if (m_petPromptEdit)
+    {
+        QString petPrompt = charConfig.value("petPrompt").toString();
+        if (petPrompt.isEmpty())
+        {
+            petPrompt = DefaultPetPrompt();
+            charConfig.setValue("petPrompt", petPrompt);
+        }
+        m_petPromptEdit->setPlainText(petPrompt);
+    }
     //立绘大小
     ZcJsonLib charUserConfig(CharacterUserConfigPath + "/" + charName +
                              "/config.json");
@@ -162,10 +465,18 @@ void SettingChild_Char::LoadCurrentCharConfig()
     RefreshTachieActionList();
     //服务商和模型选择
     QString serverSelect = charUserConfig.value("serverSelect").toString();
+    if (serverSelect.isEmpty())
+        serverSelect = "DeepSeek";
     ui->comboBox_ServerSelect->setCurrentText(serverSelect);
     RefreshModelList();
     //模型选择
     QString modelSelect = charUserConfig.value("modelSelect").toString();
+    if (modelSelect.isEmpty())
+        modelSelect = ui->comboBox_ModelSelect->currentText();
+    if (!serverSelect.isEmpty())
+        charUserConfig.setValue("serverSelect", serverSelect);
+    if (!modelSelect.isEmpty())
+        charUserConfig.setValue("modelSelect", modelSelect);
     ui->comboBox_ModelSelect->setCurrentText(modelSelect);
     //Vits语音合成选择
     bool vitsEnable = charUserConfig.value("vitsEnable").toBool();
@@ -185,62 +496,11 @@ void SettingChild_Char::LoadCurrentCharConfig()
     ui->comboBox_Vits_MASSelect->setCurrentText(vitsMasSelect);
 }
 
-/*删除选中角色按钮*/
-void SettingChild_Char::on_pushButton_DeleteChar_clicked()
-{
-    QString charName = ui->comboBox_CharList->currentText();
-
-    //检查是否选择了角色
-    if (charName.isEmpty() || charName == "未选择")
-    {
-        ElaMessageBar::warning(ElaMessageBarType::BottomRight, "删除失败",
-                               "请先选择一个角色", 3000, this);
-        return;
-    }
-
-    //删除角色文件夹
-    QString charPath = QDir(CharacterAssestPath).filePath(charName);
-    QDir charDir(charPath);
-
-    if (!charDir.exists())
-    {
-        ElaMessageBar::warning(ElaMessageBarType::BottomRight, "删除失败",
-                               "角色文件夹不存在", 3000, this);
-        return;
-    }
-
-    //递归删除文件夹
-    if (!charDir.removeRecursively())
-    {
-        ElaMessageBar::error(ElaMessageBarType::BottomRight, "删除失败",
-                             "无法删除角色文件夹，请检查权限", 5000, this);
-        return;
-    }
-
-    //刷新角色列表
-    RefreshCharList();
-
-    //清空配置显示
-    ui->plainTextEdit_CharPrompt->clear();
-    ui->spinBox_TachieSize->setValue(0);
-    ui->comboBox_ModelSelect->clear();
-    ui->ToggleSwitch_VitsEnable->setIsToggled(false);
-    ui->comboBox_Vits_MASSelect->clear();
-    ui->comboBox_Vits_ServerSelect->clear();
-
-    ElaMessageBar::success(ElaMessageBarType::BottomRight, "删除成功",
-                           QString("角色 %1 已删除").arg(charName), 4000, this);
-}
-
 /*刷新角色列表*/
 void SettingChild_Char::RefreshCharList()
 {
-    //获取所有角色文件夹并添加到combox
-    QDir charDir(CharacterAssestPath);
-    QStringList charFolders =
-        charDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
     ui->comboBox_CharList->clear();
-    ui->comboBox_CharList->addItems(charFolders);
+    ui->comboBox_CharList->addItem(PrimaryCharacterName());
 }
 
 /*修改选中角色*/
@@ -248,6 +508,8 @@ void SettingChild_Char::on_comboBox_CharList_currentTextChanged(
     const QString &arg1)
 {
     if (!isAlreadyLoading)
+        return;
+    if (arg1 != PrimaryCharacterName())
         return;
     //保存到配置文件
     QSettings *settings =
@@ -305,14 +567,9 @@ void SettingChild_Char::on_comboBox_ServerSelect_currentTextChanged(
 void SettingChild_Char::RefreshModelList()
 {
     QString serverSelect = ui->comboBox_ServerSelect->currentText();
-    ZcJsonLib config(JsonSettingPath);
-    QStringList modelList;
-    QJsonArray modelArray =
-        config.value("llm/" + serverSelect + "/ModelList").toArray();
-    for (const auto &model : modelArray)
-    {
-        modelList.append(model.toString());
-    }
+    if (serverSelect.isEmpty())
+        serverSelect = "DeepSeek";
+    const QStringList modelList = ReadLlmModelList(serverSelect);
     ui->comboBox_ModelSelect->clear();
     ui->comboBox_ModelSelect->addItems(modelList);
 }
@@ -372,187 +629,6 @@ void SettingChild_Char::on_ToggleSwitch_VitsEnable_toggled(bool checked)
     charConfig.setValue("vitsEnable", checked);
     ui->comboBox_Vits_MASSelect->setEnabled(checked);
     ui->comboBox_Vits_ServerSelect->setEnabled(checked);
-}
-
-/*导入角色压缩包*/
-void SettingChild_Char::on_pushButton_InputChar_clicked()
-{
-    //选择角色压缩包
-    QString zipFilePath = QFileDialog::getOpenFileName(
-        this, "选择角色压缩包",
-        QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation),
-        "Zip Files (*.zip)");
-
-    if (zipFilePath.isEmpty())
-        return;
-
-    QFileInfo zipInfo(zipFilePath);
-    QString charName = zipInfo.completeBaseName();
-    QString targetCharPath = QDir(CharacterAssestPath).filePath(charName);
-
-    //如果目标角色文件夹已存在，询问用户是否覆盖
-    if (QDir(targetCharPath).exists())
-    {
-        ElaContentDialog overwriteDialog(this);
-        overwriteDialog.setLeftButtonText("取消");
-        overwriteDialog.setRightButtonText("覆盖");
-
-        QLabel *messageLabel = new QLabel(
-            QString("角色 %1 已存在，是否覆盖？").arg(charName), &overwriteDialog);
-        messageLabel->setWordWrap(true);
-        overwriteDialog.setCentralWidget(messageLabel);
-
-        QObject::connect(&overwriteDialog, &ElaContentDialog::leftButtonClicked,
-                         &overwriteDialog, &QDialog::reject);
-        QObject::connect(&overwriteDialog, &ElaContentDialog::rightButtonClicked,
-                         &overwriteDialog, &QDialog::accept);
-
-        if (overwriteDialog.exec() != QDialog::Accepted)
-            return;
-    }
-    QDir().mkpath(CharacterAssestPath);
-
-#ifdef Q_OS_WIN
-    QProcess process;
-    QString command =
-        QString("Expand-Archive -LiteralPath '%1' -DestinationPath '%2' -Force")
-            .arg(zipFilePath, CharacterAssestPath);
-    process.setProgram("powershell");
-    process.setArguments(QStringList() << "-NoProfile" << "-Command" << command);
-    process.start();
-    if (!process.waitForFinished(60000))
-    {
-        process.kill();
-        ElaMessageBar::error(ElaMessageBarType::BottomRight, "导入失败",
-                             "解压过程超时", 5000, this);
-        return;
-    }
-
-    if (process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0)
-    {
-        QString error = process.readAllStandardError();
-        ElaMessageBar::error(ElaMessageBarType::BottomRight, "导入失败",
-                             QString("解压失败: %1").arg(error), 5000,
-                             this);
-        return;
-    }
-#else
-    QString errorMessage;
-    if (!extractZipArchive(zipFilePath, CharacterAssestPath, &errorMessage))
-    {
-        ElaMessageBar::error(ElaMessageBarType::BottomRight, "导入失败",
-                             QString("解压失败: %1").arg(errorMessage), 5000,
-                             this);
-        return;
-    }
-#endif
-
-    RefreshCharList();
-    if (ui->comboBox_CharList->findText(charName) >= 0)
-        ui->comboBox_CharList->setCurrentText(charName);
-
-    ElaMessageBar::success(ElaMessageBarType::TopRight, "导入成功",
-                           QString("角色 %1 已导入").arg(charName), 4000, this);
-}
-
-/*导出选中的角色*/
-void SettingChild_Char::on_pushButton_OutputChar_clicked()
-{
-    //获取选中的角色名称
-    QString charName = ui->comboBox_CharList->currentText();
-    if (charName.isEmpty() || charName == "未选择")
-    {
-        ElaMessageBar::warning(ElaMessageBarType::BottomRight, "导出失败",
-                               "请先选择一个角色", 3000, this);
-        return;
-    }
-
-    //检查角色文件夹是否存在
-    QString charPath = QDir(CharacterAssestPath).filePath(charName);
-    if (!QDir(charPath).exists())
-    {
-        ElaMessageBar::warning(ElaMessageBarType::BottomRight, "导出失败",
-                               "角色文件夹不存在", 3000, this);
-        return;
-    }
-
-    //询问用户导出位置
-    QString exportDir = QFileDialog::getExistingDirectory(
-        this, "选择导出位置",
-        QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation),
-        QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
-
-    if (exportDir.isEmpty()) //用户取消了
-        return;
-
-    //构建目标压缩包路径
-    QString zipFileName = charName + ".zip";
-    QString zipFilePath = QDir(exportDir).filePath(zipFileName);
-
-    //检查文件是否已存在
-    if (QFile::exists(zipFilePath))
-    {
-        ElaContentDialog overwriteDialog(this);
-        overwriteDialog.setLeftButtonText("取消");
-        overwriteDialog.setRightButtonText("覆盖");
-
-        QLabel *messageLabel =
-            new QLabel(QString("文件 %1 已存在，是否覆盖？").arg(zipFileName),
-                       &overwriteDialog);
-        messageLabel->setWordWrap(true);
-        overwriteDialog.setCentralWidget(messageLabel);
-
-        QObject::connect(&overwriteDialog, &ElaContentDialog::leftButtonClicked,
-                         &overwriteDialog, &QDialog::reject);
-        QObject::connect(&overwriteDialog, &ElaContentDialog::rightButtonClicked,
-                         &overwriteDialog, &QDialog::accept);
-
-        if (overwriteDialog.exec() != QDialog::Accepted)
-            return;
-        QFile::remove(zipFilePath);
-    }
-
-    //使用系统命令压缩（跨平台支持）
-    QProcess process;
-
-#ifdef Q_OS_WIN
-    //Windows: 使用PowerShell
-    QString command =
-        QString("Compress-Archive -Path '%1' -DestinationPath '%2' -Force")
-            .arg(charPath, zipFilePath);
-    process.setProgram("powershell");
-    process.setArguments(QStringList() << "-NoProfile" << "-Command" << command);
-#else
-    //Linux/Mac: 使用zip命令
-    //需要先cd到Character/Assets目录，然后压缩相对路径
-    QString basePath = QDir(CharacterAssestPath).absolutePath();
-
-    process.setWorkingDirectory(basePath);
-    process.setProgram("zip");
-    process.setArguments(QStringList() << "-r" << zipFilePath << charName);
-#endif
-
-    process.start();
-    if (!process.waitForFinished(60000)) //等待最多60秒
-    {
-        ElaMessageBar::error(ElaMessageBarType::BottomRight, "导出失败",
-                             "压缩过程超时", 5000, this);
-        process.kill();
-        return;
-    }
-
-    if (process.exitCode() != 0)
-    {
-        QString error = process.readAllStandardError();
-        ElaMessageBar::error(ElaMessageBarType::BottomRight, "导出失败",
-                             QString("压缩失败: %1").arg(error), 5000, this);
-        return;
-    }
-
-    ElaMessageBar::success(
-        ElaMessageBarType::BottomRight, "导出成功",
-        QString("角色 %1 已成功导出到:\n%2").arg(charName, zipFilePath), 4000,
-        this);
 }
 
 /*刷新立绘动画列表*/
@@ -688,6 +764,6 @@ void SettingChild_Char::on_BreadcrumbBar_breadcrumbClicked(
     Q_UNUSED(lastBreadcrumbList)
     if (breadcrumb == "角色设置")
     {
-        ui->stackedWidget->setCurrentIndex(0);
+        ShowPrimaryPage();
     }
 }

@@ -14,6 +14,7 @@
 #include <QFrame>
 #include <QJsonArray>
 #include <QKeyEvent>
+#include <QHideEvent>
 #include <QMediaPlayer>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
@@ -34,6 +35,14 @@ namespace
 {
 constexpr const char *kUserPrefix = "用户：";
 constexpr const char *kRolePrefix = "角色：";
+
+QString DefaultPetPrompt()
+{
+    return QStringLiteral(
+        "你是一个桌面陪伴 AI，像 Galgame 角色一样陪伴用户。"
+        "你可以轻松、可爱、自然地聊天，也可以在用户需要时帮忙看代码、解释报错和整理思路。"
+        "回复时优先使用中文，语气要像在桌面旁边陪着用户，而不是生硬的工具。");
+}
 
 int findNextSentenceEnd(const QString &text, int start)
 {
@@ -343,11 +352,7 @@ void Dialog::keyReleaseEvent(QKeyEvent *event)
     if (event->key() == Qt::Key_Escape)
     {
         keys.removeAll(event->key());
-        if (historyWin && historyWin->isVisible())
-        {
-            historyWin->hide();
-            isHistoryOpen = false;
-        }
+        hideHistoryWindow();
         hide();
         return;
     }
@@ -373,6 +378,12 @@ void Dialog::showEvent(QShowEvent *event)
     ui->label_name->setVisible(true);
     if (!isAwaitingNextInput())
         ui->textEdit->setFocus();
+}
+
+void Dialog::hideEvent(QHideEvent *event)
+{
+    hideHistoryWindow();
+    QWidget::hideEvent(event);
 }
 
 void Dialog::wheelEvent(QWheelEvent *event)
@@ -452,6 +463,13 @@ void Dialog::handleWheelUp()
         ui->pushButton_history->click();
 }
 
+void Dialog::hideHistoryWindow()
+{
+    if (historyWin)
+        historyWin->hide();
+    isHistoryOpen = false;
+}
+
 void Dialog::handleWheelDown()
 {
     if (isHistoryOpen)
@@ -473,6 +491,12 @@ void Dialog::loadContextHistory()
         if (!line.isEmpty())
             m_contextHistory.append(line);
     }
+}
+
+void Dialog::ReloadContextHistory()
+{
+    loadContextHistory();
+    hideHistoryWindow();
 }
 
 void Dialog::saveContextHistory() const
@@ -592,13 +616,19 @@ void Dialog::submitCurrentInput()
 
     ZcJsonLib roleConfig(CharacterAssestPath + "/" + ReadNowSelectChar() + "/config.json");
     const QString characterPrompt = roleConfig.value("prompt").toString().trimmed();
+    QString petPrompt = roleConfig.value("petPrompt").toString().trimmed();
+    if (petPrompt.isEmpty())
+        petPrompt = DefaultPetPrompt();
 
     QString systemPrompt;
     if (!characterPrompt.isEmpty())
         systemPrompt += QStringLiteral("角色设定：") + characterPrompt +
                         QStringLiteral("\n请始终保持该设定进行回复。\n\n");
+    if (!petPrompt.isEmpty())
+        systemPrompt += QStringLiteral("桌宠行为设定：") + petPrompt +
+                        QStringLiteral("\n请按照该桌宠行为设定与用户互动。\n\n");
     systemPrompt += QStringLiteral(
-        "你是一个桌面陪伴 AI，输出内容必须严格使用以下格式：\n"
+        "输出内容必须严格使用以下格式：\n"
         "表情|中文回复|日语配音文本\n\n"
         "要求：\n"
         "1. 表情必须从以下立绘名称中选择：") +
@@ -646,7 +676,14 @@ void Dialog::on_pushButton_next_clicked()
 
 void Dialog::ToggleVisible()
 {
-    setVisible(!isVisible());
+    if (isVisible())
+    {
+        hideHistoryWindow();
+        hide();
+        return;
+    }
+
+    show();
 }
 
 void Dialog::ReloadAIConfig()
@@ -665,7 +702,15 @@ void Dialog::ReloadAIConfig()
 
     ZcJsonLib config(JsonSettingPath);
     ai->setApiKey(config.value("llm/" + serverSelect + "/ApiKey").toString());
-    ai->setModel(charConfig.value("modelSelect").toString());
+    QString modelSelect = charConfig.value("modelSelect").toString();
+    if (modelSelect.isEmpty())
+    {
+        const QJsonArray modelArray =
+            config.value("llm/" + serverSelect + "/ModelList").toArray();
+        if (!modelArray.isEmpty())
+            modelSelect = modelArray.first().toString();
+    }
+    ai->setModel(modelSelect);
     loadContextHistory();
 }
 

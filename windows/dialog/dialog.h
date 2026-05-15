@@ -9,6 +9,7 @@
 #include <QWidget>
 
 class QAudioOutput;
+class QHideEvent;
 class QMediaPlayer;
 class QNetworkAccessManager;
 class QTemporaryFile;
@@ -34,6 +35,7 @@ class Dialog : public QWidget
     void VitsGetAndPlay(QString text);
     void ReloadAIConfig();
     void ReloadTextSettings();
+    void ReloadContextHistory();
 
   private slots:
     void on_pushButton_next_clicked();
@@ -48,11 +50,13 @@ class Dialog : public QWidget
     void keyPressEvent(QKeyEvent *event) override;
     void keyReleaseEvent(QKeyEvent *event) override;
     void showEvent(QShowEvent *event) override;
+    void hideEvent(QHideEvent *event) override;
     void wheelEvent(QWheelEvent *event) override;
     void moveEvent(QMoveEvent *event) override;
     bool eventFilter(QObject *watched, QEvent *event) override;
 
     void initWindow();
+    void hideHistoryWindow();
     void handleWheelUp();
     void handleWheelDown();
 

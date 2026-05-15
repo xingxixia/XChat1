@@ -7,6 +7,10 @@
 
 #include <QList>
 
+class ElaPlainTextEdit;
+class ElaPushButton;
+class QVBoxLayout;
+
 namespace Ui
 {
 class SettingChild_Char;
@@ -24,7 +28,6 @@ class SettingChild_Char : public QWidget
     void RefreshVitsModelList(); ////刷新Vits模型列表
 
   private slots:
-    void on_pushButton_DeleteChar_clicked();
     void on_comboBox_CharList_currentTextChanged(const QString &arg1);
     void on_plainTextEdit_CharPrompt_textChanged();
     void on_spinBox_TachieSize_textChanged(const QString &arg1);
@@ -33,8 +36,6 @@ class SettingChild_Char : public QWidget
     void on_pushButton_ResetTachieLoc_clicked();
     void on_comboBox_Vits_MASSelect_currentTextChanged(const QString &arg1);
     void on_ToggleSwitch_VitsEnable_toggled(bool checked);
-    void on_pushButton_InputChar_clicked();
-    void on_pushButton_OutputChar_clicked();
     void on_pushButton_Tachie_Set_clicked();
     void on_BreadcrumbBar_breadcrumbClicked(QString breadcrumb,
                                             QStringList lastBreadcrumbList);
@@ -44,12 +45,29 @@ class SettingChild_Char : public QWidget
     void requestSetTachieSize(int size);
     void requestResetTachieLoc();
     void requestReloadAIConfig();
+    void requestReloadContextHistory();
 
   private:
     Ui::SettingChild_Char *ui;
     bool isAlreadyLoading = false;
     AnimePluginManager m_pluginManager;
     QList<QWidget *> m_tachieBindingRows;
+    QList<QWidget *> m_historyRows;
+    ElaPlainTextEdit *m_petPromptEdit = nullptr;
+    QWidget *m_historyPage = nullptr;
+    QVBoxLayout *m_historyListLayout = nullptr;
+    ElaPushButton *m_pageOneButton = nullptr;
+    ElaPushButton *m_pageTwoButton = nullptr;
+    void SetupPetPromptEditor();
+    void SetupPageSwitcher();
+    void SetupHistoryPage();
+    void RefreshHistoryPage();
+    QStringList ReadHistoryLines() const;
+    void SaveHistoryLines(const QStringList &historyLines);
+    void ClearHistoryRows();
+    void SetPrimaryPageVisible(bool visible);
+    void ShowPrimaryPage();
+    void ShowHistoryPage();
     void LoadCurrentCharConfig();
     void RefreshCharList();
     void ClearTachieBindingRows();

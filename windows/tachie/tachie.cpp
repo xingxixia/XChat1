@@ -12,9 +12,11 @@
 #include <QDir>
 #include <QEasingCurve>
 #include <QFileInfo>
+#include <QGuiApplication>
 #include <QImage>
 #include <QMouseEvent>
 #include <QPropertyAnimation>
+#include <QScreen>
 #include <QSequentialAnimationGroup>
 #include <QTimer>
 #include <QVariantAnimation>
@@ -378,7 +380,6 @@ void Tachie::TryPlayAnimationForAction(const QString &actionName)
 //设置窗口大小并重载立绘
 void Tachie::SetTachieSize(int size)
 {
-    constexpr double kCanvasScale = 2.0;
     const int safeSize = (size <= 0) ? 100 : size;
     qInfo() << "设置立绘大小为" << safeSize;
 
@@ -393,18 +394,27 @@ void Tachie::SetTachieSize(int size)
                          Qt::KeepAspectRatio, Qt::SmoothTransformation);
 
     // 预留 200% 画布，缩放动画只动图片层，不改窗口几何，避免抖动。
-    const int canvasW = qMax(1, qRound(scaledPixmap.width() * kCanvasScale));
-    const int canvasH = qMax(1, qRound(scaledPixmap.height() * kCanvasScale));
-    const int imgX = (canvasW - scaledPixmap.width()) / 2;
-    const int imgY = (canvasH - scaledPixmap.height()) / 2;
+    const QRect availableGeometry =
+        QGuiApplication::primaryScreen()
+            ? QGuiApplication::primaryScreen()->availableGeometry()
+            : QRect();
+    if (availableGeometry.isValid() &&
+        (scaledPixmap.width() > availableGeometry.width() ||
+         scaledPixmap.height() > availableGeometry.height()))
+    {
+        scaledPixmap = scaledPixmap.scaled(
+            qMax(1, availableGeometry.width() * 3 / 5),
+            qMax(1, availableGeometry.height() * 9 / 10),
+            Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    }
 
-    this->resize(canvasW, canvasH);
+    this->resize(scaledPixmap.size());
     ui->label_tachie1->setPixmap(scaledPixmap);
-    ui->label_tachie1->setGeometry(imgX, imgY, scaledPixmap.width(),
+    ui->label_tachie1->setGeometry(0, 0, scaledPixmap.width(),
                                    scaledPixmap.height());
 
     _scaledImg = scaledPixmap.toImage();
-    _scaledImgTopLeft = QPoint(imgX, imgY);
+    _scaledImgTopLeft = QPoint(0, 0);
 
 #ifdef Q_OS_LINUX //这里是gemini3写的，我觉得在linux下的效果还不错，你可以到windows端测试一下
     ApplyLinuxInputShapeFromImage();

@@ -6,6 +6,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QSettings>
+#include <QStandardPaths>
 #include <QString>
 
 inline QString ProjectRootPath()
@@ -30,6 +31,12 @@ inline QString RuntimeDataRootPath()
 inline QString DefaultRuntimeDataRootPath()
 {
     return QDir(ProjectRootPath()).filePath("res/default_config/ZcChat2");
+}
+
+inline QString LegacyDocumentsDataRootPath()
+{
+    return QDir(QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation))
+        .filePath("ZcChat2");
 }
 
 inline void CopyMissingFilesRecursively(const QString &sourceRoot,
@@ -57,6 +64,8 @@ inline void CopyMissingFilesRecursively(const QString &sourceRoot,
 
 inline void InitializeRuntimeData()
 {
+    CopyMissingFilesRecursively(LegacyDocumentsDataRootPath(),
+                                RuntimeDataRootPath());
     CopyMissingFilesRecursively(DefaultRuntimeDataRootPath(),
                                 RuntimeDataRootPath());
 }
@@ -66,25 +75,70 @@ inline QString UnselectedCharacterName()
     return QString::fromUtf8(QByteArray::fromHex("e69caae98089e68ba9"));
 }
 
+class RuntimePath
+{
+  public:
+    enum Kind
+    {
+        JsonSetting,
+        IniSetting,
+        CharacterAssets,
+        CharacterUserConfig,
+        AnimePlugin
+    };
+
+    explicit constexpr RuntimePath(Kind kind) : m_kind(kind) {}
+
+    QString toString() const
+    {
+        const QDir root(RuntimeDataRootPath());
+        switch (m_kind)
+        {
+        case JsonSetting:
+            return root.filePath("config.json");
+        case IniSetting:
+            return root.filePath("config.ini");
+        case CharacterAssets:
+            return root.filePath("Character/Assets");
+        case CharacterUserConfig:
+            return root.filePath("Character/UserConfig");
+        case AnimePlugin:
+            return root.filePath("Plugin/Anime");
+        }
+        return RuntimeDataRootPath();
+    }
+
+    operator QString() const { return toString(); }
+
+  private:
+    Kind m_kind;
+};
+
+inline QString operator+(const RuntimePath &path, const QString &suffix)
+{
+    return path.toString() + suffix;
+}
+
+inline QString operator+(const RuntimePath &path, const char *suffix)
+{
+    return path.toString() + QString::fromUtf8(suffix);
+}
+
 // Main portable configuration, such as API keys.
-inline const QString JsonSettingPath =
-    QDir(RuntimeDataRootPath()).filePath("config.json");
+inline constexpr RuntimePath JsonSettingPath(RuntimePath::JsonSetting);
 
 // Machine-local configuration, such as selected character and position.
-inline const QString IniSettingPath =
-    QDir(RuntimeDataRootPath()).filePath("config.ini");
+inline constexpr RuntimePath IniSettingPath(RuntimePath::IniSetting);
 
 // Character asset directory.
-inline const QString CharacterAssestPath =
-    QDir(RuntimeDataRootPath()).filePath("Character/Assets");
+inline constexpr RuntimePath CharacterAssestPath(RuntimePath::CharacterAssets);
 
 // Character user configuration directory.
-inline const QString CharacterUserConfigPath =
-    QDir(RuntimeDataRootPath()).filePath("Character/UserConfig");
+inline constexpr RuntimePath CharacterUserConfigPath(
+    RuntimePath::CharacterUserConfig);
 
 // Animation plugin directory.
-inline const QString AnimePluginPath =
-    QDir(RuntimeDataRootPath()).filePath("Plugin/Anime");
+inline constexpr RuntimePath AnimePluginPath(RuntimePath::AnimePlugin);
 
 inline QString ReadNowSelectChar()
 {
